@@ -143,6 +143,18 @@ def main():
     skill_effective = skill_candidates & set(omap)
     skill_missing = skill_candidates - set(omap)
 
+    # Resource tables can reference one localization UID while another UID
+    # carries the same exact Official skill label/description in a different UI
+    # surface. Protect all exact-text aliases so duplicated skill strings stay
+    # English everywhere.
+    skill_resource_texts = {
+        (omap[uid].text or "") for uid in skill_effective if (omap[uid].text or "")
+    }
+    skill_text_alias_uids = {
+        uid for uid, e in omap.items() if (e.text or "") in skill_resource_texts
+    }
+    skill_protected_uids = skill_effective | skill_text_alias_uids
+
     protected_name_uids = {
         uid for uid, e in omap.items()
         if (e.text or "") in (ATTRIBUTE_NAMES | COMBAT_ABILITY_NAMES | KEEP_ENGLISH_EXACT)
@@ -155,7 +167,7 @@ def main():
     talent_unresolved = []
 
     # First restore the exact protected English categories.
-    english_protected_uids = set(skill_effective) | protected_name_uids | {SUSPICIOUS}
+    english_protected_uids = set(skill_protected_uids) | protected_name_uids | {SUSPICIOUS}
     for uid in english_protected_uids:
         replace_entry(fmap[uid], omap[uid])
 
@@ -202,7 +214,7 @@ def main():
         if not uids:
             known_skill_check[name] = {"uids": [], "protected": False, "status": "not_found"}
             continue
-        protected = all(uid in skill_effective for uid in uids)
+        protected = all(uid in skill_protected_uids for uid in uids)
         english_final = all((final_map[uid].text or "") == name for uid in uids)
         known_skill_check[name] = {
             "uids": uids,
@@ -266,6 +278,8 @@ def main():
         "skill_protection_config_files": len(skill_files),
         "skill_protection_candidate_handles": len(skill_candidates),
         "skill_protection_effective_handles": len(skill_effective),
+        "skill_protection_text_alias_uids": len(skill_text_alias_uids),
+        "skill_protection_total_uids": len(skill_protected_uids),
         "skill_protection_missing_from_main": len(skill_missing),
         "attribute_names_protected": sorted(ATTRIBUTE_NAMES),
         "combat_ability_names_protected": sorted(COMBAT_ABILITY_NAMES),
@@ -291,7 +305,7 @@ def main():
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     Path(args.report).with_name("protected_skill_handles_effective.txt").write_text(
-        "\n".join(sorted(skill_effective)) + "\n", encoding="utf-8"
+        "\n".join(sorted(skill_protected_uids)) + "\n", encoding="utf-8"
     )
     Path(args.report).with_name("subtitle_handles.txt").write_text(
         "\n".join(sorted(out_sub_handles)) + "\n", encoding="utf-8"
