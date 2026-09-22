@@ -119,8 +119,12 @@ def main():
         raise SystemExit(f"Readable handles missing from official localization: {len(missing_readable)}")
 
     effective_whitelist = whitelist & set(omap)
-    if SUSPICIOUS in effective_whitelist:
-        raise SystemExit(f"Suspicious known-corruption handle selected: {SUSPICIOUS}")
+    suspicious_fallback = SUSPICIOUS in effective_whitelist
+    if suspicious_fallback:
+        # Thai v1.3 contains a known structurally suspicious/corrupted value for
+        # this UID. Fail-safe behavior is to retain the authoritative Official
+        # English value for this single entry instead of emitting broken XML/text.
+        effective_whitelist.remove(SUSPICIOUS)
 
     entries, selected, changed = replace_whitelisted(off_main, thai_main, out_main, effective_whitelist)
 
@@ -175,6 +179,8 @@ def main():
         "main_non_whitelist_mismatches": len(mismatch_non_whitelist),
         "main_whitelist_mismatches": len(mismatch_whitelist),
         "suspicious_handle_selected": SUSPICIOUS in effective_whitelist,
+        "suspicious_handle_fallback_to_official": suspicious_fallback,
+        "suspicious_handle": SUSPICIOUS if suspicious_fallback else None,
     }
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
