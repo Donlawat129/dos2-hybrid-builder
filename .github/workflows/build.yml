@@ -1,0 +1,152 @@
+name: Build DOS2 Hybrid English.pak
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build.yml"
+      - "scripts/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@v4
+
+      - name: Download persistent inputs from Google Drive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force work/inputs | Out-Null
+          function Get-GDriveFile([string]$id, [string]$out, [long]$expected) {
+            $url = "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t"
+            curl.exe -L --fail --retry 4 --retry-delay 2 $url -o $out
+            if (-not (Test-Path $out)) { throw "Download missing: $out" }
+            $size = (Get-Item $out).Length
+            if ($size -ne $expected) { throw "Unexpected size for $out : $size (expected $expected)" }
+          }
+          Get-GDriveFile "1BH0KhiVapcRoyGHw6dx5ELC3RBD_YobA" "work/inputs/Official_English.pak" 6527683
+          Get-GDriveFile "1L6LyL-Yiwc8wqSSdIRHx1Dfu8InsZfHi" "work/inputs/DOS2-Thai-v1.3.zip" 7056485
+          Get-GDriveFile "1VCHdjShY8U-IFf2-gcL8wwMqcxSjfLvZ" "work/inputs/dialogue_handles.txt" 2640381
+          Get-GDriveFile "1js0HhsVjdsNUrshXrEABQSuXZMcJeLJc" "work/inputs/readable_handles.txt" 14392
+
+      - name: Download LSLib ExportTool
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://github.com/Norbyte/lslib/releases/download/v1.20.4/ExportTool-v1.20.4.zip"
+          curl.exe -L --fail --retry 4 --retry-delay 2 $url -o work/ExportTool.zip
+          Expand-Archive -Force work/ExportTool.zip work/ExportTool
+          $divine = Get-ChildItem work/ExportTool -Recurse -Filter divine.exe | Select-Object -First 1
+          if (-not $divine) { throw "divine.exe not found in ExportTool" }
+          "DIVINE_EXE=$($divine.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Extract official and Thai packages
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force work/official, work/thai_zip, work/thai, work/reports | Out-Null
+          Expand-Archive -Force work/inputs/DOS2-Thai-v1.3.zip work/thai_zip
+          $thaiPak = Get-ChildItem work/thai_zip -Recurse -Filter English.pak | Where-Object { $_.FullName -match "[\\/]Localization[\\/]English\.pak$" } | Select-Object -First 1
+          if (-not $thaiPak) { throw "Thai English.pak not found inside Thai v1.3 ZIP" }
+          & "$env:DIVINE_EXE" -g dos2de -a extract-package -s (Resolve-Path work/inputs/Official_English.pak) -d (Resolve-Path work/official)
+          if ($LASTEXITCODE -ne 0) { throw "Official package extraction failed" }
+          & "$env:DIVINE_EXE" -g dos2de -a extract-package -s $thaiPak.FullName -d (Resolve-Path work/thai)
+          if ($LASTEXITCODE -ne 0) { throw "Thai package extraction failed" }
+          $officialFiles = @(Get-ChildItem work/official -Recurse -File)
+          $thaiFiles = @(Get-ChildItem work/thai -Recurse -File)
+          if ($officialFiles.Count -ne 250) { throw "Official package expected 250 files; got $($officialFiles.Count)" }
+          if ($thaiFiles.Count -ne 250) { throw "Thai package expected 250 files; got $($thaiFiles.Count)" }
+          @{ official_files = $officialFiles.Count; thai_files = $thaiFiles.Count; thai_pak_path = $thaiPak.FullName } | ConvertTo-Json | Set-Content work/reports/extract.json -Encoding utf8
+
+      - name: Save extraction checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-01-extracted
+          path: |
+            work/reports/extract.json
+            work/official/Localization/English/english.xml
+            work/thai/Localization/English/english.xml
+          retention-days: 7
+
+      - name: Build hybrid staged payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python scripts/build_hybrid.py --official work/official --thai work/thai --dialogue work/inputs/dialogue_handles.txt --readable work/inputs/readable_handles.txt --out work/staged --report work/reports/merge.json
+
+      - name: Save merge checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-02-merged
+          path: |
+            work/reports/merge.json
+            work/reports/subtitle_handles.txt
+            work/staged/Localization/English/english.xml
+          retention-days: 7
+
+      - name: Repack DOS2DE LSPK v13
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force work/output | Out-Null
+          $dest = Join-Path (Resolve-Path work/output).Path "English.pak"
+          & "$env:DIVINE_EXE" -g dos2de -a create-package -s (Resolve-Path work/staged) -d $dest -c lz4
+          if ($LASTEXITCODE -ne 0) { throw "Package creation failed" }
+          if (-not (Test-Path work/output/English.pak)) { throw "English.pak was not created" }
+          if ((Get-Item work/output/English.pak).Length -le 0) { throw "English.pak is empty" }
+
+      - name: Build installable ZIP with Thai fonts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installRoot = "work/install/DOS2-Hybrid"
+          New-Item -ItemType Directory -Force "$installRoot/Localization" | Out-Null
+          Copy-Item work/output/English.pak "$installRoot/Localization/English.pak"
+          $fontDir = Get-ChildItem work/thai_zip -Recurse -Directory | Where-Object { $_.FullName -match "[\\/]Public[\\/]Game[\\/]GUI[\\/]fonts$" } | Select-Object -First 1
+          if (-not $fontDir) { throw "Thai font directory not found in Thai ZIP" }
+          New-Item -ItemType Directory -Force "$installRoot/Public/Game/GUI" | Out-Null
+          Copy-Item -Recurse -Force $fontDir.FullName "$installRoot/Public/Game/GUI/fonts"
+          Compress-Archive -Force -Path "$installRoot" -DestinationPath work/output/DOS2-Hybrid-Thai-English.zip
+
+      - name: Round-trip extract rebuilt PAK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force work/roundtrip | Out-Null
+          & "$env:DIVINE_EXE" -g dos2de -a extract-package -s (Resolve-Path work/output/English.pak) -d (Resolve-Path work/roundtrip)
+          if ($LASTEXITCODE -ne 0) { throw "Round-trip extraction failed" }
+
+      - name: Final QA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python scripts/verify_roundtrip.py --staged work/staged --roundtrip work/roundtrip --merge-report work/reports/merge.json --pak work/output/English.pak --out-json work/reports/qa.json --out-md work/reports/QA_REPORT.md
+          $qa = Get-Content work/reports/qa.json -Raw | ConvertFrom-Json
+          if ($qa.status -ne "PASS") { throw "QA status is not PASS" }
+          if ($qa.merge.official_main_entries -ne 92327) { throw "Wrong official entry count" }
+          if ($qa.merge.thai_main_entries -ne 92327) { throw "Wrong Thai entry count" }
+          if ($qa.merge.main_non_whitelist_mismatches -ne 0) { throw "Non-whitelist mismatch detected" }
+          if ($qa.merge.main_whitelist_mismatches -ne 0) { throw "Whitelist mismatch detected" }
+          if ($qa.merge.suspicious_handle_selected) { throw "Known suspicious Thai handle selected" }
+
+      - name: Save final build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DOS2-Hybrid-Build
+          path: |
+            work/output/English.pak
+            work/output/DOS2-Hybrid-Thai-English.zip
+            work/reports/QA_REPORT.md
+            work/reports/qa.json
+            work/reports/merge.json
+            work/reports/subtitle_handles.txt
+          if-no-files-found: error
+          retention-days: 30
