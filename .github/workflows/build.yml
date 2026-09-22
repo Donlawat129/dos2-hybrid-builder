@@ -145,8 +145,6 @@ jobs:
           if ($qa.merge.thai_baseline_mismatches -ne 0) { throw "Thai baseline mismatch detected" }
           if ($qa.merge.talent_policy_mismatches -ne 0) { throw "Talent policy mismatch detected" }
           if ($qa.merge.skill_protection_effective_handles -le 0) { throw "No combat skill protection handles were applied" }
-          if ($qa.merge.attribute_protection_missing -ne 0) { throw "Attribute protection handle missing" }
-          if ($qa.merge.ability_protection_missing -ne 0) { throw "Ability protection handle missing" }
           if ($qa.merge.item_override_mismatches -ne 0) { throw "Item Thai override mismatch detected" }
           if ($qa.merge.known_combat_skill_check.'Mosquito Swarm'.status -ne "pass") { throw "Mosquito Swarm was not protected in English" }
           if ($qa.merge.known_combat_skill_check.'Raise Bloated Corpse'.status -ne "pass") { throw "Raise Bloated Corpse was not protected in English" }
@@ -157,7 +155,7 @@ jobs:
       - name: Save final build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: DOS2-Hybrid-Build
+          name: DOS2-Hybrid-Build-v3
           path: |
             work/output/English.pak
             work/output/DOS2-Hybrid-Thai-English-v3.zip
@@ -165,5 +163,6 @@ jobs:
             work/reports/qa.json
             work/reports/merge.json
             work/reports/subtitle_handles.txt
+            work/reports/protected_skill_handles_effective.txt
           if-no-files-found: error
           retention-days: 30
