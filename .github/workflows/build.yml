@@ -142,6 +142,8 @@ jobs:
           if ($qa.merge.thai_main_entries -ne 92327) { throw "Wrong Thai entry count" }
           if ($qa.merge.main_non_whitelist_mismatches -ne 0) { throw "Non-whitelist mismatch detected" }
           if ($qa.merge.main_whitelist_mismatches -ne 0) { throw "Whitelist mismatch detected" }
+          if ($qa.merge.talent_policy_mismatches -ne 0) { throw "Talent policy mismatch detected" }
+          if ($qa.merge.talent_entries_matched -le 0) { throw "No Talent entries were matched" }
           if ($qa.merge.suspicious_handle_selected) { throw "Known suspicious Thai handle selected" }
 
       - name: Save final build artifacts
