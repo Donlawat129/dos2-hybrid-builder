@@ -1,0 +1,68 @@
+name: Diagnose DOS2 UI handles
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/diagnose-ui.yml"
+      - "scripts/diagnose_ui_handles.py"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force work | Out-Null
+          function Get-G([string]$id,[string]$out,[long]$expected) {
+            $url="https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t"
+            curl.exe -L --fail --retry 4 --retry-delay 2 $url -o $out
+            if ((Get-Item $out).Length -ne $expected) { throw "Bad size $out" }
+          }
+          Get-G "1BH0KhiVapcRoyGHw6dx5ELC3RBD_YobA" "work/Official_English.pak" 6527683
+          Get-G "1MBnDNvEqpqsfOJzaAlhMzNWWfRHgdFI2" "work/Shared.7z.001" 209715200
+          Get-G "1ReMCaQ9dw8BFhIkwFC0P0BJnIm6tRnci" "work/Shared.7z.002" 209715200
+          Get-G "11c0DlKN5ICjD-IAunvHCffikscol7r5j" "work/Shared.7z.003" 209715200
+          Get-G "193m91IYCPG760xjGOd4BgemgP1tWidbN" "work/Shared.7z.004" 209715200
+          Get-G "1oZY2TQLAwzOAgYNLZgwY0_jMG9jU5d5Q" "work/Shared.7z.005" 956162
+
+      - name: Download LSLib
+        shell: pwsh
+        run: |
+          curl.exe -L --fail https://github.com/Norbyte/lslib/releases/download/v1.20.4/ExportTool-v1.20.4.zip -o work/ExportTool.zip
+          Expand-Archive -Force work/ExportTool.zip work/ExportTool
+          $d=Get-ChildItem work/ExportTool -Recurse -Filter divine.exe | Select-Object -First 1
+          "DIVINE_EXE=$($d.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Extract official localization
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force work/official | Out-Null
+          & "$env:DIVINE_EXE" -g dos2de -a extract-package -s (Resolve-Path work/Official_English.pak) -d (Resolve-Path work/official)
+          if ($LASTEXITCODE -ne 0) { throw "PAK extract failed" }
+
+      - name: Extract Shared archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force work/shared | Out-Null
+          7z x work/Shared.7z.001 -owork/shared -y
+          if ($LASTEXITCODE -ne 0) { throw "Shared archive extract failed" }
+
+      - name: Map localization handles to Shared files
+        shell: pwsh
+        run: |
+          python scripts/diagnose_ui_handles.py --english work/official/Localization/English/english.xml --root work/shared --out work/ui_handle_sources.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-handle-diagnostic
+          path: work/ui_handle_sources.json
+          retention-days: 7
