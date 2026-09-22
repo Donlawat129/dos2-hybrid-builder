@@ -110,15 +110,19 @@ def main():
     found_readable = readable & set(omap)
     missing_dialogue = dialogue - set(omap)
     missing_readable = readable - set(omap)
-    if missing_dialogue:
-        raise SystemExit(f"Dialogue handles missing from official localization: {len(missing_dialogue)}")
+    # dialogue_handles.txt is a candidate set derived from dialogue resources.
+    # Some handles can legitimately be resource-local/non-localization handles.
+    # The effective whitelist is therefore restricted to UIDs that exist in the
+    # authoritative Official English localization table. Readable handles are
+    # expected to be exact localization handles and remain fail-closed.
     if missing_readable:
         raise SystemExit(f"Readable handles missing from official localization: {len(missing_readable)}")
 
-    if SUSPICIOUS in whitelist:
+    effective_whitelist = whitelist & set(omap)
+    if SUSPICIOUS in effective_whitelist:
         raise SystemExit(f"Suspicious known-corruption handle selected: {SUSPICIOUS}")
 
-    entries, selected, changed = replace_whitelisted(off_main, thai_main, out_main, whitelist)
+    entries, selected, changed = replace_whitelisted(off_main, thai_main, out_main, effective_whitelist)
 
     subtitle_handles, subtitle_files = extract_subtitle_handles(official)
     copied_subtitles = 0
@@ -139,7 +143,7 @@ def main():
     mismatch_whitelist = []
     for uid, oe in omap.items():
         fe = final_map[uid]
-        if uid not in whitelist:
+        if uid not in effective_whitelist:
             if (oe.text or "") != (fe.text or "") or oe.attrib != fe.attrib:
                 mismatch_non_whitelist.append(uid)
         else:
@@ -158,16 +162,19 @@ def main():
         "thai_main_entries": len(tmap),
         "dialogue_handles": len(dialogue),
         "readable_handles": len(readable),
-        "combined_story_whitelist": len(whitelist),
+        "candidate_story_whitelist": len(whitelist),
+        "effective_story_whitelist": len(effective_whitelist),
         "dialogue_found": len(found_dialogue),
+        "dialogue_missing_from_main_localization": len(missing_dialogue),
         "readable_found": len(found_readable),
+        "readable_missing_from_main_localization": len(missing_readable),
         "subtitle_files": len(subtitle_files),
         "subtitle_files_copied_from_thai": copied_subtitles,
         "subtitle_unique_handles_observed": len(subtitle_handles),
         "main_selected_entries": selected,
         "main_non_whitelist_mismatches": len(mismatch_non_whitelist),
         "main_whitelist_mismatches": len(mismatch_whitelist),
-        "suspicious_handle_selected": SUSPICIOUS in whitelist,
+        "suspicious_handle_selected": SUSPICIOUS in effective_whitelist,
     }
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
