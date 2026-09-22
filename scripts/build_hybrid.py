@@ -64,12 +64,11 @@ def extract_subtitle_handles(root):
         if "subtitle" not in rel:
             continue
         files.append(p)
-        try:
-            _, mp = parse_content_file(p)
-            hs.update(mp.keys())
-        except ET.ParseError:
-            txt = p.read_text(encoding="utf-8", errors="ignore")
-            hs.update(re.findall(r'h[0-9a-f]{8}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{12}', txt))
+        # Subtitle LSX resources do not use the same <content contentuid=...>
+        # schema as english.xml; collect every localization handle present in
+        # these dedicated subtitle files.
+        txt = p.read_text(encoding="utf-8", errors="ignore")
+        hs.update(re.findall(r'h[0-9a-f]{8}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{12}', txt))
     return hs, files
 
 def main():
