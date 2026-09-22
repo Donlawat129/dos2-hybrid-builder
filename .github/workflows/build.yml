@@ -114,14 +114,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $installRoot = "work/install/DOS2-Hybrid-v2"
+          $installRoot = "work/install/DOS2-Hybrid-v3"
           New-Item -ItemType Directory -Force "$installRoot/Localization" | Out-Null
           Copy-Item work/output/English.pak "$installRoot/Localization/English.pak"
           $fontDir = Get-ChildItem work/thai_zip -Recurse -Directory | Where-Object { $_.FullName -match "[\\/]Public[\\/]Game[\\/]GUI[\\/]fonts$" } | Select-Object -First 1
           if (-not $fontDir) { throw "Thai font directory not found in Thai ZIP" }
           New-Item -ItemType Directory -Force "$installRoot/Public/Game/GUI" | Out-Null
           Copy-Item -Recurse -Force $fontDir.FullName "$installRoot/Public/Game/GUI/fonts"
-          Compress-Archive -Force -Path "$installRoot" -DestinationPath work/output/DOS2-Hybrid-Thai-English-v2.zip
+          Compress-Archive -Force -Path "$installRoot" -DestinationPath work/output/DOS2-Hybrid-Thai-English-v3.zip
 
       - name: Round-trip extract rebuilt PAK
         shell: pwsh
@@ -145,7 +145,11 @@ jobs:
           if ($qa.merge.thai_baseline_mismatches -ne 0) { throw "Thai baseline mismatch detected" }
           if ($qa.merge.talent_policy_mismatches -ne 0) { throw "Talent policy mismatch detected" }
           if ($qa.merge.skill_protection_effective_handles -le 0) { throw "No combat skill protection handles were applied" }
+          if ($qa.merge.attribute_protection_missing -ne 0) { throw "Attribute protection handle missing" }
+          if ($qa.merge.ability_protection_missing -ne 0) { throw "Ability protection handle missing" }
+          if ($qa.merge.item_override_mismatches -ne 0) { throw "Item Thai override mismatch detected" }
           if ($qa.merge.known_combat_skill_check.'Mosquito Swarm'.status -ne "pass") { throw "Mosquito Swarm was not protected in English" }
+          if ($qa.merge.known_combat_skill_check.'Raise Bloated Corpse'.status -ne "pass") { throw "Raise Bloated Corpse was not protected in English" }
           if ($qa.merge.subtitle_files -ne 245) { throw "Wrong subtitle file count" }
           if ($qa.merge.subtitle_unique_handles_final -ne 670) { throw "Wrong subtitle handle count" }
           if (-not $qa.merge.suspicious_handle_fallback_to_official) { throw "Known corrupted Thai handle did not fall back to Official" }
@@ -156,7 +160,7 @@ jobs:
           name: DOS2-Hybrid-Build
           path: |
             work/output/English.pak
-            work/output/DOS2-Hybrid-Thai-English-v2.zip
+            work/output/DOS2-Hybrid-Thai-English-v3.zip
             work/reports/QA_REPORT.md
             work/reports/qa.json
             work/reports/merge.json
