@@ -56,10 +56,20 @@ jobs:
           7z x work/Shared.7z.001 -owork/shared -y
           if ($LASTEXITCODE -ne 0) { throw "Shared archive extract failed" }
 
+      - name: Extract Shared.pak
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sharedPak = Get-ChildItem work/shared -Recurse -Filter Shared.pak | Select-Object -First 1
+          if (-not $sharedPak) { throw "Shared.pak not found after 7z extraction" }
+          New-Item -ItemType Directory -Force work/shared_unpacked | Out-Null
+          & "$env:DIVINE_EXE" -g dos2de -a extract-package -s $sharedPak.FullName -d (Resolve-Path work/shared_unpacked)
+          if ($LASTEXITCODE -ne 0) { throw "Shared.pak extraction failed" }
+
       - name: Map localization handles to Shared files
         shell: pwsh
         run: |
-          python scripts/diagnose_ui_handles.py --english work/official/Localization/English/english.xml --root work/shared --out work/ui_handle_sources.json
+          python scripts/diagnose_ui_handles.py --english work/official/Localization/English/english.xml --root work/shared_unpacked --out work/ui_handle_sources.json
 
       - uses: actions/upload-artifact@v4
         with:
