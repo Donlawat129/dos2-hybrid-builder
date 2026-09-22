@@ -87,7 +87,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python scripts/build_hybrid.py --official work/official --thai work/thai --dialogue work/inputs/dialogue_handles.txt --readable work/inputs/readable_handles.txt --out work/staged --report work/reports/merge.json
+          python scripts/build_hybrid.py --official work/official --thai work/thai --skill-handles-dir config --out work/staged --report work/reports/merge.json
 
       - name: Save merge checkpoint
         uses: actions/upload-artifact@v4
@@ -95,7 +95,7 @@ jobs:
           name: checkpoint-02-merged
           path: |
             work/reports/merge.json
-            work/reports/subtitle_handles.txt
+            work/reports/subtitle_handles.txt\n            work/reports/protected_skill_handles_effective.txt
             work/staged/Localization/English/english.xml
           retention-days: 7
 
@@ -114,14 +114,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $installRoot = "work/install/DOS2-Hybrid"
+          $installRoot = "work/install/DOS2-Hybrid-v2"
           New-Item -ItemType Directory -Force "$installRoot/Localization" | Out-Null
           Copy-Item work/output/English.pak "$installRoot/Localization/English.pak"
           $fontDir = Get-ChildItem work/thai_zip -Recurse -Directory | Where-Object { $_.FullName -match "[\\/]Public[\\/]Game[\\/]GUI[\\/]fonts$" } | Select-Object -First 1
           if (-not $fontDir) { throw "Thai font directory not found in Thai ZIP" }
           New-Item -ItemType Directory -Force "$installRoot/Public/Game/GUI" | Out-Null
           Copy-Item -Recurse -Force $fontDir.FullName "$installRoot/Public/Game/GUI/fonts"
-          Compress-Archive -Force -Path "$installRoot" -DestinationPath work/output/DOS2-Hybrid-Thai-English.zip
+          Compress-Archive -Force -Path "$installRoot" -DestinationPath work/output/DOS2-Hybrid-Thai-English-v2.zip
 
       - name: Round-trip extract rebuilt PAK
         shell: pwsh
@@ -140,11 +140,15 @@ jobs:
           if ($qa.status -ne "PASS") { throw "QA status is not PASS" }
           if ($qa.merge.official_main_entries -ne 92327) { throw "Wrong official entry count" }
           if ($qa.merge.thai_main_entries -ne 92327) { throw "Wrong Thai entry count" }
-          if ($qa.merge.main_non_whitelist_mismatches -ne 0) { throw "Non-whitelist mismatch detected" }
-          if ($qa.merge.main_whitelist_mismatches -ne 0) { throw "Whitelist mismatch detected" }
+          if ($qa.merge.final_main_entries -ne 92327) { throw "Wrong final entry count" }
+          if ($qa.merge.protected_mismatches -ne 0) { throw "English protection mismatch detected" }
+          if ($qa.merge.thai_baseline_mismatches -ne 0) { throw "Thai baseline mismatch detected" }
           if ($qa.merge.talent_policy_mismatches -ne 0) { throw "Talent policy mismatch detected" }
-          if ($qa.merge.talent_entries_matched -le 0) { throw "No Talent entries were matched" }
-          if ($qa.merge.suspicious_handle_selected) { throw "Known suspicious Thai handle selected" }
+          if ($qa.merge.skill_protection_effective_handles -le 0) { throw "No combat skill protection handles were applied" }
+          if ($qa.merge.known_combat_skill_check.'Mosquito Swarm'.status -ne "pass") { throw "Mosquito Swarm was not protected in English" }
+          if ($qa.merge.subtitle_files -ne 245) { throw "Wrong subtitle file count" }
+          if ($qa.merge.subtitle_unique_handles_final -ne 670) { throw "Wrong subtitle handle count" }
+          if (-not $qa.merge.suspicious_handle_fallback_to_official) { throw "Known corrupted Thai handle did not fall back to Official" }
 
       - name: Save final build artifacts
         uses: actions/upload-artifact@v4
@@ -152,7 +156,7 @@ jobs:
           name: DOS2-Hybrid-Build
           path: |
             work/output/English.pak
-            work/output/DOS2-Hybrid-Thai-English.zip
+            work/output/DOS2-Hybrid-Thai-English-v2.zip
             work/reports/QA_REPORT.md
             work/reports/qa.json
             work/reports/merge.json
