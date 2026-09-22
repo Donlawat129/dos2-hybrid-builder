@@ -66,12 +66,19 @@ jobs:
           if ($thaiFiles.Count -ne 250) { throw "Thai package expected 250 files; got $($thaiFiles.Count)" }
           @{ official_files = $officialFiles.Count; thai_files = $thaiFiles.Count; thai_pak_path = $thaiPak.FullName } | ConvertTo-Json | Set-Content work/reports/extract.json -Encoding utf8
 
+      - name: Report talent localization mapping
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python scripts/report_talents.py --official work/official/Localization/English/english.xml --thai work/thai/Localization/English/english.xml --out work/reports/talents.json
+
       - name: Save extraction checkpoint
         uses: actions/upload-artifact@v4
         with:
           name: checkpoint-01-extracted
           path: |
             work/reports/extract.json
+            work/reports/talents.json
             work/official/Localization/English/english.xml
             work/thai/Localization/English/english.xml
           retention-days: 7
